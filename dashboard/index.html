@@ -31,6 +31,7 @@
     const SUPABASE_URL = 'https://obzfsyhhurvvfkincumr.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9iemZzeWhodXJ2dmZraW5jdW1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg1NDI1NzYsImV4cCI6MjA1NDExODU3Nn0.rVSo1EwJBHnUNpflmJ2ZB6NI4RAL10dTzvCi5diaPoo';
 
+
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
     // Status badge component
@@ -42,12 +43,247 @@
         posted: 'bg-blue-500',
         edited: 'bg-purple-500',
         superseded: 'bg-gray-500',
+        processing: 'bg-blue-500',
+        ready: 'bg-green-500',
+        failed: 'bg-red-500',
       };
 
       return (
         <span className={`${colors[status] || 'bg-gray-500'} text-white text-xs px-2 py-1 rounded-full`}>
           {status}
         </span>
+      );
+    }
+
+    // Content Feed component
+    function ContentFeed({ onContentAdded }) {
+      const [isOpen, setIsOpen] = useState(false);
+      const [items, setItems] = useState([]);
+      const [loading, setLoading] = useState(false);
+
+      // New content form
+      const [url, setUrl] = useState('');
+      const [title, setTitle] = useState('');
+      const [notes, setNotes] = useState('');
+      const [contentType, setContentType] = useState('url');
+      const [action, setAction] = useState('post');
+      const [submitting, setSubmitting] = useState(false);
+
+      // Fetch content feed items
+      const fetchItems = useCallback(async () => {
+        const { data, error } = await supabase
+          .from('content_feed')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(20);
+
+        if (!error && data) {
+          setItems(data);
+        }
+      }, []);
+
+      useEffect(() => {
+        if (isOpen) {
+          fetchItems();
+        }
+      }, [isOpen, fetchItems]);
+
+      // Auto-detect content type from URL
+      const handleUrlChange = (value) => {
+        setUrl(value);
+        if (value.includes('youtube.com') || value.includes('youtu.be')) {
+          setContentType('youtube');
+        } else if (value.startsWith('http')) {
+          setContentType('url');
+        }
+      };
+
+      // Submit new content
+      const handleSubmit = async (e) => {
+        e.preventDefault();
+        if (!url && !notes) return;
+
+        setSubmitting(true);
+
+        const { error } = await supabase
+          .from('content_feed')
+          .insert({
+            url: url || null,
+            title: title || null,
+            notes: notes || null,
+            content_type: contentType,
+            action: action,
+          });
+
+        if (!error) {
+          setUrl('');
+          setTitle('');
+          setNotes('');
+          setContentType('url');
+          setAction('post');
+          fetchItems();
+          if (onContentAdded) onContentAdded();
+        }
+
+        setSubmitting(false);
+      };
+
+      // Delete content item
+      const handleDelete = async (id) => {
+        await supabase.from('content_feed').delete().eq('id', id);
+        fetchItems();
+      };
+
+      return (
+        <div className="bg-white/10 backdrop-blur rounded-lg border border-white/20 mb-6 overflow-hidden">
+          {/* Header */}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full p-4 flex justify-between items-center hover:bg-white/5 transition"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📢</span>
+              <div className="text-left">
+                <h3 className="text-white font-medium">Content Feed</h3>
+                <p className="text-white/60 text-sm">
+                  Add URLs and content for MindsDBubu to evangelize
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {items.filter(i => i.status === 'pending').length > 0 && (
+                <span className="bg-yellow-500 text-white text-xs px-2 py-1 rounded-full">
+                  {items.filter(i => i.status === 'pending').length} pending
+                </span>
+              )}
+              <span className="text-white/60">{isOpen ? '▲' : '▼'}</span>
+            </div>
+          </button>
+
+          {/* Expanded content */}
+          {isOpen && (
+            <div className="p-4 pt-0 border-t border-white/10">
+              {/* Add new content form */}
+              <form onSubmit={handleSubmit} className="space-y-3 mb-6">
+                <div>
+                  <input
+                    type="text"
+                    value={url}
+                    onChange={(e) => handleUrlChange(e.target.value)}
+                    className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-green-500 focus:outline-none"
+                    placeholder="Paste URL (YouTube, blog post, docs...)"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <input
+                    type="text"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="bg-black/30 text-white rounded-lg px-4 py-2 border border-white/20 focus:border-green-500 focus:outline-none text-sm"
+                    placeholder="Title (optional)"
+                  />
+                  <select
+                    value={contentType}
+                    onChange={(e) => setContentType(e.target.value)}
+                    className="bg-black/30 text-white rounded-lg px-4 py-2 border border-white/20 focus:border-green-500 focus:outline-none text-sm"
+                  >
+                    <option value="url">🔗 Web Page</option>
+                    <option value="youtube">📺 YouTube</option>
+                    <option value="announcement">📣 Announcement</option>
+                    <option value="text">📝 Text/Notes</option>
+                  </select>
+                </div>
+
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-green-500 focus:outline-none text-sm"
+                  placeholder="Notes/instructions for MindsDBubu (e.g., 'Focus on the new SQL connector feature')"
+                />
+
+                <div className="flex gap-3 items-center">
+                  <select
+                    value={action}
+                    onChange={(e) => setAction(e.target.value)}
+                    className="bg-black/30 text-white rounded-lg px-4 py-2 border border-white/20 focus:border-green-500 focus:outline-none text-sm"
+                  >
+                    <option value="post">📝 Create new post</option>
+                    <option value="reply">💬 Find convos to reply</option>
+                    <option value="both">📝+💬 Both</option>
+                  </select>
+
+                  <button
+                    type="submit"
+                    disabled={submitting || (!url && !notes)}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50 text-sm font-medium"
+                  >
+                    {submitting ? 'Adding...' : '+ Add Content'}
+                  </button>
+                </div>
+              </form>
+
+              {/* Content list */}
+              <div className="space-y-2">
+                <h4 className="text-white/60 text-sm font-medium">Recent Content</h4>
+                {items.length === 0 ? (
+                  <p className="text-white/40 text-sm py-4 text-center">
+                    No content added yet. Add a URL above!
+                  </p>
+                ) : (
+                  items.map((item) => (
+                    <div
+                      key={item.id}
+                      className="bg-black/20 rounded-lg p-3 flex justify-between items-start gap-3"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm">
+                            {item.content_type === 'youtube' ? '📺' :
+                             item.content_type === 'announcement' ? '📣' :
+                             item.content_type === 'text' ? '📝' : '🔗'}
+                          </span>
+                          <StatusBadge status={item.status} />
+                          <span className="text-white/40 text-xs">
+                            {item.action === 'post' ? '→ new post' :
+                             item.action === 'reply' ? '→ find replies' : '→ both'}
+                          </span>
+                        </div>
+                        {item.title && (
+                          <p className="text-white font-medium text-sm truncate">{item.title}</p>
+                        )}
+                        {item.url && (
+                          <a
+                            href={item.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-400 hover:text-blue-300 text-xs truncate block"
+                          >
+                            {item.url}
+                          </a>
+                        )}
+                        {item.notes && (
+                          <p className="text-white/60 text-xs mt-1 line-clamp-2">{item.notes}</p>
+                        )}
+                        {item.error_message && (
+                          <p className="text-red-400 text-xs mt-1">{item.error_message}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => handleDelete(item.id)}
+                        className="text-white/40 hover:text-red-400 text-sm p-1"
+                        title="Delete"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          )}
+        </div>
       );
     }
 
@@ -88,13 +324,12 @@
 
       return (
         <div className="bg-white/10 backdrop-blur rounded-lg border border-white/20 mb-6 overflow-hidden">
-          {/* Header - always visible */}
           <button
             onClick={() => setIsOpen(!isOpen)}
             className="w-full p-4 flex justify-between items-center hover:bg-white/5 transition"
           >
             <div className="flex items-center gap-3">
-              <img src="mindsdbubu.jpg" alt="" className="w-8 h-8" />
+              <span className="text-2xl">🧸</span>
               <div className="text-left">
                 <h3 className="text-white font-medium">System Prompt</h3>
                 <p className="text-white/60 text-sm">
@@ -105,11 +340,9 @@
             <span className="text-white/60">{isOpen ? '▲' : '▼'}</span>
           </button>
 
-          {/* Expanded editor */}
           {isOpen && (
             <div className="p-4 pt-0 border-t border-white/10">
               <div className="space-y-4">
-                {/* Persona/System Prompt */}
                 <div>
                   <label className="block text-white/80 text-sm font-medium mb-2">
                     Agent System Prompt
@@ -121,12 +354,8 @@
                     className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-yellow-500 focus:outline-none font-mono text-sm resize-y"
                     placeholder="Enter your agent's system prompt..."
                   />
-                  <p className="text-white/40 text-xs mt-1">
-                    This defines your agent's personality, mission, and behavior
-                  </p>
                 </div>
 
-                {/* Topics */}
                 <div>
                   <label className="block text-white/80 text-sm font-medium mb-2">
                     Focus Topics (comma-separated)
@@ -138,17 +367,11 @@
                     className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-yellow-500 focus:outline-none"
                     placeholder="data integration, context unification, AI infrastructure..."
                   />
-                  <p className="text-white/40 text-xs mt-1">
-                    Agent will prioritize responding to posts about these topics
-                  </p>
                 </div>
 
-                {/* Save button */}
                 <div className="flex justify-end gap-3">
                   {saved && (
-                    <span className="text-green-400 text-sm self-center">
-                      ✓ Saved!
-                    </span>
+                    <span className="text-green-400 text-sm self-center">✓ Saved!</span>
                   )}
                   <button
                     onClick={handleSave}
@@ -175,6 +398,7 @@
 
       const context = draft.context || {};
       const originalPost = context.original_post;
+      const contentSource = context.content_feed;
 
       const handleAction = async (action, extraData = {}) => {
         setLoading(true);
@@ -188,9 +412,8 @@
 
       return (
         <div className="bg-white/10 backdrop-blur rounded-lg p-4 mb-4 border border-white/20">
-          {/* Header */}
           <div className="flex justify-between items-start mb-3">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className={`text-lg ${draft.type === 'post' ? 'text-blue-400' : 'text-green-400'}`}>
                 {draft.type === 'post' ? '📝' : '💬'}
               </span>
@@ -203,13 +426,17 @@
                   Attempt #{draft.generation_attempt}
                 </span>
               )}
+              {contentSource && (
+                <span className="text-purple-400 text-xs">
+                  📢 from content feed
+                </span>
+              )}
             </div>
             <span className="text-white/40 text-xs">
               {new Date(draft.created_at).toLocaleString()}
             </span>
           </div>
 
-          {/* Original post context (for replies) */}
           {originalPost && (
             <div
               className="bg-black/20 rounded p-3 mb-3 cursor-pointer"
@@ -232,7 +459,6 @@
             </div>
           )}
 
-          {/* Draft content */}
           {editMode ? (
             <div className="space-y-3">
               {draft.type === 'post' && (
@@ -259,7 +485,6 @@
             </div>
           )}
 
-          {/* Actions (only for pending drafts) */}
           {draft.status === 'pending' && (
             <div className="mt-4 pt-3 border-t border-white/10">
               {editMode ? (
@@ -318,7 +543,6 @@
                     </button>
                   </div>
 
-                  {/* Optional feedback for regeneration */}
                   <div className="mt-3">
                     <input
                       type="text"
@@ -333,7 +557,6 @@
             </div>
           )}
 
-          {/* Posted link */}
           {(draft.moltbook_post_id || draft.moltbook_comment_id) && (
             <div className="mt-3 pt-3 border-t border-white/10">
               <a
@@ -438,7 +661,6 @@
       const [filter, setFilter] = useState('pending');
       const [expandedDraft, setExpandedDraft] = useState(null);
 
-      // Fetch drafts
       const fetchDrafts = useCallback(async () => {
         const { data, error } = await supabase
           .from('post_queue')
@@ -451,7 +673,6 @@
         }
       }, []);
 
-      // Fetch config
       const fetchConfig = useCallback(async () => {
         const { data, error } = await supabase
           .from('agent_config')
@@ -463,13 +684,11 @@
         }
       }, []);
 
-      // Initial load
       useEffect(() => {
         Promise.all([fetchDrafts(), fetchConfig()]).then(() => {
           setLoading(false);
         });
 
-        // Subscribe to realtime updates
         const channel = supabase
           .channel('post_queue_changes')
           .on('postgres_changes',
@@ -483,7 +702,6 @@
         };
       }, [fetchDrafts, fetchConfig]);
 
-      // Handle draft actions
       const handleAction = async (draftId, action, extraData = {}) => {
         if (action === 'regenerate') {
           const response = await fetch(
@@ -528,7 +746,6 @@
         }
       };
 
-      // Filter drafts
       const filteredDrafts = drafts.filter(d => {
         if (filter === 'all') return true;
         if (filter === 'pending') return d.status === 'pending';
@@ -547,11 +764,10 @@
 
       return (
         <div className="max-w-3xl mx-auto p-6">
-          {/* Header */}
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-3xl font-bold flex items-center gap-3">
-                <img src="mindsdbubu.jpg" alt="MindsDBubu" className="w-10 h-10" />
+                <span>🧸</span>
                 <span className="monster-gradient">MindsDBubu</span>
               </h1>
               <p className="text-white/60 mt-1">
@@ -565,6 +781,9 @@
               ↻ Refresh
             </button>
           </div>
+
+          {/* Content Feed - NEW */}
+          <ContentFeed onContentAdded={fetchDrafts} />
 
           {/* System Prompt Editor */}
           {config && <SystemPromptEditor config={config} onUpdate={setConfig} />}
@@ -596,7 +815,7 @@
           <div>
             {filteredDrafts.length === 0 ? (
               <div className="text-center py-12 text-white/60">
-                <img src="mindsdbubu.jpg" alt="MindsDBubu" className="w-16 h-16 mx-auto mb-3" />
+                <p className="text-4xl mb-3">🧸</p>
                 <p>No {filter === 'all' ? '' : filter} drafts yet</p>
                 <p className="text-sm mt-1">MindsDBubu is hungry for context...</p>
               </div>
