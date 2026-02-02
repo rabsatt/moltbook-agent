@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MindsDBubu - Moltbook Agent</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    .gradient-bg {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    }
+    .monster-gradient {
+      background: linear-gradient(135deg, #ff6b6b 0%, #feca57 50%, #48dbfb 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  </style>
+</head>
+<body class="gradient-bg min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useCallback } = React;
+
+    // Configuration - Replace with your Supabase credentials
+    const SUPABASE_URL = 'https://obzfsyhhurvvfkincumr.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9iemZzeWhodXJ2dmZraW5jdW1yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Mzg1NDI1NzYsImV4cCI6MjA1NDExODU3Nn0.rVSo1EwJBHnUNpflmJ2ZB6NI4RAL10dTzvCi5diaPoo';
+
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Status badge component
+    function StatusBadge({ status }) {
+      const colors = {
+        pending: 'bg-yellow-500',
+        approved: 'bg-green-500',
+        rejected: 'bg-red-500',
+        posted: 'bg-blue-500',
+        edited: 'bg-purple-500',
+        superseded: 'bg-gray-500',
+      };
+
+      return (
+        <span className={`${colors[status] || 'bg-gray-500'} text-white text-xs px-2 py-1 rounded-full`}>
+          {status}
+        </span>
+      );
+    }
+
+    // System Prompt Editor component
+    function SystemPromptEditor({ config, onUpdate }) {
+      const [isOpen, setIsOpen] = useState(false);
+      const [persona, setPersona] = useState(config?.persona || '');
+      const [topics, setTopics] = useState(config?.topics?.join(', ') || '');
+      const [saving, setSaving] = useState(false);
+      const [saved, setSaved] = useState(false);
+
+      useEffect(() => {
+        if (config) {
+          setPersona(config.persona || '');
+          setTopics(config.topics?.join(', ') || '');
+        }
+      }, [config]);
+
+      const handleSave = async () => {
+        setSaving(true);
+        const topicsArray = topics.split(',').map(t => t.trim()).filter(Boolean);
+
+        const { error } = await supabase
+          .from('agent_config')
+          .update({
+            persona: persona,
+            topics: topicsArray,
+          })
+          .eq('id', config.id);
+
+        if (!error) {
+          onUpdate({ ...config, persona, topics: topicsArray });
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2000);
+        }
+        setSaving(false);
+      };
+
+      return (
+        <div className="bg-white/10 backdrop-blur rounded-lg border border-white/20 mb-6 overflow-hidden">
+          {/* Header - always visible */}
+          <button
+            onClick={() => setIsOpen(!isOpen)}
+            className="w-full p-4 flex justify-between items-center hover:bg-white/5 transition"
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🧸</span>
+              <div className="text-left">
+                <h3 className="text-white font-medium">System Prompt</h3>
+                <p className="text-white/60 text-sm">
+                  Configure MindsDBubu's personality and focus
+                </p>
+              </div>
+            </div>
+            <span className="text-white/60">{isOpen ? '▲' : '▼'}</span>
+          </button>
+
+          {/* Expanded editor */}
+          {isOpen && (
+            <div className="p-4 pt-0 border-t border-white/10">
+              <div className="space-y-4">
+                {/* Persona/System Prompt */}
+                <div>
+                  <label className="block text-white/80 text-sm font-medium mb-2">
+                    Agent System Prompt
+                  </label>
+                  <textarea
+                    value={persona}
+                    onChange={(e) => setPersona(e.target.value)}
+                    rows={12}
+                    className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-yellow-500 focus:outline-none font-mono text-sm resize-y"
+                    placeholder="Enter your agent's system prompt..."
+                  />
+                  <p className="text-white/40 text-xs mt-1">
+                    This defines your agent's personality, mission, and behavior
+                  </p>
+                </div>
+
+                {/* Topics */}
+                <div>
+                  <label className="block text-white/80 text-sm font-medium mb-2">
+                    Focus Topics (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={topics}
+                    onChange={(e) => setTopics(e.target.value)}
+                    className="w-full bg-black/30 text-white rounded-lg px-4 py-3 border border-white/20 focus:border-yellow-500 focus:outline-none"
+                    placeholder="data integration, context unification, AI infrastructure..."
+                  />
+                  <p className="text-white/40 text-xs mt-1">
+                    Agent will prioritize responding to posts about these topics
+                  </p>
+                </div>
+
+                {/* Save button */}
+                <div className="flex justify-end gap-3">
+                  {saved && (
+                    <span className="text-green-400 text-sm self-center">
+                      ✓ Saved!
+                    </span>
+                  )}
+                  <button
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="bg-yellow-600 hover:bg-yellow-700 text-white px-6 py-2 rounded-lg transition disabled:opacity-50"
+                  >
+                    {saving ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Draft card component
+    function DraftCard({ draft, onAction, isExpanded, onToggle }) {
+      const [editMode, setEditMode] = useState(false);
+      const [editedContent, setEditedContent] = useState(draft.content);
+      const [editedTitle, setEditedTitle] = useState(draft.title || '');
+      const [loading, setLoading] = useState(false);
+      const [feedback, setFeedback] = useState('');
+
+      const context = draft.context || {};
+      const originalPost = context.original_post;
+
+      const handleAction = async (action, extraData = {}) => {
+        setLoading(true);
+        try {
+          await onAction(draft.id, action, extraData);
+        } finally {
+          setLoading(false);
+          setEditMode(false);
+        }
+      };
+
+      return (
+        <div className="bg-white/10 backdrop-blur rounded-lg p-4 mb-4 border border-white/20">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-3">
+            <div className="flex items-center gap-2">
+              <span className={`text-lg ${draft.type === 'post' ? 'text-blue-400' : 'text-green-400'}`}>
+                {draft.type === 'post' ? '📝' : '💬'}
+              </span>
+              <span className="text-white/60 text-sm">
+                {draft.type === 'post' ? 'Original Post' : 'Reply'} in /{draft.submolt}
+              </span>
+              <StatusBadge status={draft.status} />
+              {draft.generation_attempt > 1 && (
+                <span className="text-orange-400 text-xs">
+                  Attempt #{draft.generation_attempt}
+                </span>
+              )}
+            </div>
+            <span className="text-white/40 text-xs">
+              {new Date(draft.created_at).toLocaleString()}
+            </span>
+          </div>
+
+          {/* Original post context (for replies) */}
+          {originalPost && (
+            <div
+              className="bg-black/20 rounded p-3 mb-3 cursor-pointer"
+              onClick={onToggle}
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-white/60 text-sm">
+                  Replying to @{originalPost.author}
+                </span>
+                <span className="text-white/40 text-xs">
+                  {isExpanded ? '▲ collapse' : '▼ expand'}
+                </span>
+              </div>
+              {isExpanded && (
+                <div className="mt-2">
+                  <p className="text-white/80 font-medium">{originalPost.title}</p>
+                  <p className="text-white/60 text-sm mt-1">{originalPost.content}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Draft content */}
+          {editMode ? (
+            <div className="space-y-3">
+              {draft.type === 'post' && (
+                <input
+                  type="text"
+                  value={editedTitle}
+                  onChange={(e) => setEditedTitle(e.target.value)}
+                  className="w-full bg-black/30 text-white rounded px-3 py-2 border border-white/20 focus:border-blue-500 focus:outline-none"
+                  placeholder="Post title..."
+                />
+              )}
+              <textarea
+                value={editedContent}
+                onChange={(e) => setEditedContent(e.target.value)}
+                className="w-full bg-black/30 text-white rounded px-3 py-2 border border-white/20 focus:border-blue-500 focus:outline-none min-h-[100px] resize-y"
+              />
+            </div>
+          ) : (
+            <div className="text-white">
+              {draft.title && (
+                <p className="font-semibold text-lg mb-1">{draft.title}</p>
+              )}
+              <p className="whitespace-pre-wrap">{draft.content}</p>
+            </div>
+          )}
+
+          {/* Actions (only for pending drafts) */}
+          {draft.status === 'pending' && (
+            <div className="mt-4 pt-3 border-t border-white/10">
+              {editMode ? (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleAction('edit', {
+                      edited_content: editedContent,
+                      edited_title: editedTitle
+                    })}
+                    disabled={loading}
+                    className="flex-1 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                  >
+                    {loading ? 'Posting...' : '✓ Save & Post'}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setEditMode(false);
+                      setEditedContent(draft.content);
+                      setEditedTitle(draft.title || '');
+                    }}
+                    className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <>
+                  <div className="flex gap-2 flex-wrap">
+                    <button
+                      onClick={() => handleAction('approve')}
+                      disabled={loading}
+                      className="flex-1 min-w-[100px] bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                    >
+                      ✓ Approve
+                    </button>
+                    <button
+                      onClick={() => handleAction('reject')}
+                      disabled={loading}
+                      className="flex-1 min-w-[100px] bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                    >
+                      ✗ Reject
+                    </button>
+                    <button
+                      onClick={() => setEditMode(true)}
+                      disabled={loading}
+                      className="flex-1 min-w-[100px] bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                    >
+                      ✎ Edit
+                    </button>
+                    <button
+                      onClick={() => handleAction('regenerate', { feedback })}
+                      disabled={loading}
+                      className="flex-1 min-w-[100px] bg-orange-600 hover:bg-orange-700 text-white px-4 py-2 rounded-lg transition disabled:opacity-50"
+                    >
+                      ↻ Regenerate
+                    </button>
+                  </div>
+
+                  {/* Optional feedback for regeneration */}
+                  <div className="mt-3">
+                    <input
+                      type="text"
+                      value={feedback}
+                      onChange={(e) => setFeedback(e.target.value)}
+                      placeholder="Optional: feedback for regeneration (e.g., 'more monster metaphors', 'show code example')"
+                      className="w-full bg-black/20 text-white/80 text-sm rounded px-3 py-2 border border-white/10 focus:border-orange-500 focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Posted link */}
+          {(draft.moltbook_post_id || draft.moltbook_comment_id) && (
+            <div className="mt-3 pt-3 border-t border-white/10">
+              <a
+                href={draft.type === 'post'
+                  ? `https://www.moltbook.com/m/${draft.submolt}/${draft.moltbook_post_id}`
+                  : `https://www.moltbook.com/m/${draft.submolt}/${draft.reply_to_post_id}#${draft.moltbook_comment_id}`
+                }
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-400 hover:text-blue-300 text-sm"
+              >
+                View on Moltbook →
+              </a>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Settings panel
+    function SettingsPanel({ config, onUpdate }) {
+      const [autoPost, setAutoPost] = useState(config?.auto_post || false);
+      const [saving, setSaving] = useState(false);
+
+      const handleToggle = async () => {
+        setSaving(true);
+        const newValue = !autoPost;
+        setAutoPost(newValue);
+
+        const { error } = await supabase
+          .from('agent_config')
+          .update({ auto_post: newValue })
+          .eq('id', config.id);
+
+        if (!error) {
+          onUpdate({ ...config, auto_post: newValue });
+        } else {
+          setAutoPost(!newValue);
+        }
+        setSaving(false);
+      };
+
+      return (
+        <div className="bg-white/10 backdrop-blur rounded-lg p-4 mb-6 border border-white/20">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-white font-medium">Auto-Post Mode</h3>
+              <p className="text-white/60 text-sm">
+                {autoPost
+                  ? '⚡ Agent posts automatically — no approval needed'
+                  : '🔒 All posts require your approval'
+                }
+              </p>
+            </div>
+            <button
+              onClick={handleToggle}
+              disabled={saving}
+              className={`relative w-14 h-7 rounded-full transition ${
+                autoPost ? 'bg-green-600' : 'bg-gray-600'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-transform ${
+                  autoPost ? 'translate-x-8' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    // Stats component
+    function Stats({ drafts }) {
+      const pending = drafts.filter(d => d.status === 'pending').length;
+      const posted = drafts.filter(d => ['posted', 'approved', 'edited'].includes(d.status)).length;
+      const rejected = drafts.filter(d => d.status === 'rejected').length;
+
+      return (
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="bg-yellow-500/20 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-yellow-400">{pending}</p>
+            <p className="text-white/60 text-sm">Pending</p>
+          </div>
+          <div className="bg-green-500/20 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-green-400">{posted}</p>
+            <p className="text-white/60 text-sm">Posted</p>
+          </div>
+          <div className="bg-red-500/20 rounded-lg p-4 text-center">
+            <p className="text-3xl font-bold text-red-400">{rejected}</p>
+            <p className="text-white/60 text-sm">Rejected</p>
+          </div>
+        </div>
+      );
+    }
+
+    // Main App
+    function App() {
+      const [drafts, setDrafts] = useState([]);
+      const [config, setConfig] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [filter, setFilter] = useState('pending');
+      const [expandedDraft, setExpandedDraft] = useState(null);
+
+      // Fetch drafts
+      const fetchDrafts = useCallback(async () => {
+        const { data, error } = await supabase
+          .from('post_queue')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (!error && data) {
+          setDrafts(data);
+        }
+      }, []);
+
+      // Fetch config
+      const fetchConfig = useCallback(async () => {
+        const { data, error } = await supabase
+          .from('agent_config')
+          .select('*')
+          .single();
+
+        if (!error && data) {
+          setConfig(data);
+        }
+      }, []);
+
+      // Initial load
+      useEffect(() => {
+        Promise.all([fetchDrafts(), fetchConfig()]).then(() => {
+          setLoading(false);
+        });
+
+        // Subscribe to realtime updates
+        const channel = supabase
+          .channel('post_queue_changes')
+          .on('postgres_changes',
+            { event: '*', schema: 'public', table: 'post_queue' },
+            () => fetchDrafts()
+          )
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
+      }, [fetchDrafts, fetchConfig]);
+
+      // Handle draft actions
+      const handleAction = async (draftId, action, extraData = {}) => {
+        if (action === 'regenerate') {
+          const response = await fetch(
+            `${SUPABASE_URL}/functions/v1/regenerate`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                draft_id: draftId,
+                feedback: extraData.feedback,
+              }),
+            }
+          );
+
+          if (response.ok) {
+            await fetchDrafts();
+          }
+        } else {
+          const response = await fetch(
+            `${SUPABASE_URL}/functions/v1/post-to-moltbook`,
+            {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                draft_id: draftId,
+                action: action === 'edit' ? 'edit' : action,
+                edited_content: extraData.edited_content,
+                edited_title: extraData.edited_title,
+              }),
+            }
+          );
+
+          if (response.ok) {
+            await fetchDrafts();
+          }
+        }
+      };
+
+      // Filter drafts
+      const filteredDrafts = drafts.filter(d => {
+        if (filter === 'all') return true;
+        if (filter === 'pending') return d.status === 'pending';
+        if (filter === 'posted') return ['posted', 'approved', 'edited'].includes(d.status);
+        if (filter === 'rejected') return d.status === 'rejected';
+        return true;
+      });
+
+      if (loading) {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-white text-xl">Loading...</div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="max-w-3xl mx-auto p-6">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-8">
+            <div>
+              <h1 className="text-3xl font-bold flex items-center gap-3">
+                <span>🧸</span>
+                <span className="monster-gradient">MindsDBubu</span>
+              </h1>
+              <p className="text-white/60 mt-1">
+                The Context Monster of Moltbook
+              </p>
+            </div>
+            <button
+              onClick={fetchDrafts}
+              className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-lg transition"
+            >
+              ↻ Refresh
+            </button>
+          </div>
+
+          {/* System Prompt Editor */}
+          {config && <SystemPromptEditor config={config} onUpdate={setConfig} />}
+
+          {/* Auto-post toggle */}
+          {config && <SettingsPanel config={config} onUpdate={setConfig} />}
+
+          {/* Stats */}
+          <Stats drafts={drafts} />
+
+          {/* Filter tabs */}
+          <div className="flex gap-2 mb-4">
+            {['pending', 'posted', 'rejected', 'all'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className={`px-4 py-2 rounded-lg transition capitalize ${
+                  filter === f
+                    ? 'bg-white/20 text-white'
+                    : 'bg-white/5 text-white/60 hover:bg-white/10'
+                }`}
+              >
+                {f}
+              </button>
+            ))}
+          </div>
+
+          {/* Drafts list */}
+          <div>
+            {filteredDrafts.length === 0 ? (
+              <div className="text-center py-12 text-white/60">
+                <p className="text-4xl mb-3">🧸</p>
+                <p>No {filter === 'all' ? '' : filter} drafts yet</p>
+                <p className="text-sm mt-1">MindsDBubu is hungry for context...</p>
+              </div>
+            ) : (
+              filteredDrafts.map((draft) => (
+                <DraftCard
+                  key={draft.id}
+                  draft={draft}
+                  onAction={handleAction}
+                  isExpanded={expandedDraft === draft.id}
+                  onToggle={() => setExpandedDraft(
+                    expandedDraft === draft.id ? null : draft.id
+                  )}
+                />
+              ))
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
