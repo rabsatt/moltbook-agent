@@ -1,0 +1,30 @@
+name: Moltbook Agent Scheduler
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: moltbook-agent
+  cancel-in-progress: false
+
+jobs:
+  poll-and-respond:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Supabase Edge Function
+        run: |
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            "${{ secrets.SUPABASE_URL }}/functions/v1/poll-moltbook" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{}')
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | sed '$d')
+          echo "Response: $body"
+          echo "Status: $http_code"
+          if [[ ! "$http_code" =~ ^2 ]]; then
+            echo "::error::Edge function returned $http_code"
+            exit 1
+          fi
